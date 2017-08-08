@@ -1,0 +1,57 @@
+from collections import OrderedDict as od
+from collections import defaultdict
+#exp1="{[}][()]"
+exp1="{[()]}"
+# when close previous open should be of same close type
+
+od.checklist = defaultdict(list)
+
+var1 = 0
+
+for i in range(len(exp1)):
+ 
+    m = exp1[i]
+    if m == "{" :
+          od.checklist[i].append(m+"2-f")
+          print i
+    elif m == "[" :
+          od.checklist[i].append(m+"2-s")
+          print i
+    elif m == "(" :
+          od.checklist[i].append(m+"2-p")
+          print i
+    elif m == "}" :
+          od.checklist[i].append(m+"1-f")
+          print i
+    elif m == "]" :
+          od.checklist[i].append(m+"1-s")
+          print i
+    elif m == ")" :
+          od.checklist[i].append(m+"1-p")
+          print i
+ 
+    var1=var1+1
+    
+print var1
+print od.checklist[0]
+varnew = 0
+ind = 0
+for k,v in od.checklist.items():
+ 
+ x=k-1
+ check = od.checklist[k] 
+ str1 = ''.join(check)
+ ind = ind + int(str1[1])
+ 
+ if ind%2 != 0 :
+      
+     checkw = od.checklist[x]
+     str2 = ''.join(checkw)
+      
+     if str2[3] != str1[3] :
+         varnew = 1
+         break
+     else :
+         continue
+     
+print varnew
