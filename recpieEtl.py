@@ -105,3 +105,5 @@ if __name__ == "__main__":
  
     #Execute Main function 
     main(sc, inputfile, outputfile)
+   
+   #spark-submit --master yarn-cluster RecepieEtl.py /user/hdfs/test/hellofresh/recipes.json /user/hdfs/test/hellofresh/recepie_with_diff
