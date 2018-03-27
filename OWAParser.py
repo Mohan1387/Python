@@ -1,8 +1,9 @@
 #__author__ = 'Mohan Manivannan' 
 #__name__ = 'Application to parse Citrix logs'
 #__Version__ = '1.0'
-
 #Create on 8th Feb 2018 Version 1.0
+#updated on 26 march 2017 changed all processing logic to RDD
+
 from pyspark.sql.functions import col,split
 import re
 import datetime
@@ -10,7 +11,7 @@ import sys
 from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext
 from pyspark.sql.functions import udf
-from pyspark.sql.functions import regexp_replace
+from pyspark.sql.functions import regexp_replace, lower
 from pyspark.sql.types import *
 from pyspark.sql import SparkSession, HiveContext
 
@@ -22,7 +23,7 @@ from pyspark.sql import SparkSession, HiveContext
 #hive_context.setConf("hive.metastore.uris", "thrift://master:9083")
 #SparkContext.setSystemProperty("hive.metastore.uris", "thrift://master:9083")
 #spark = (SparkSession.builder.appName('CitrixlogParser').enableHiveSupport().getOrCreate())
-spark = (SparkSession.builder.appName("CitrixLogParser").config("spark.executor.cores","2").config("spark.driver.memory", "6g").config("spark.executor.memory", "6g").config("hive.metastore.uris", "thrift://master:9083").config("spark.sql.hive.metastore.version", "2.1.1").config("spark.sql.hive.metastore.jars", "/usr/local/hive/lib/*").config("spark.sql.hive.metastore.sharedPrefixes", "com.mysql.jdbc").config("spark.sql.warehouse.dir", "hdfs://master:54310/user/hive/warehouse").config("hive.exec.dynamic.partition", "true").config("hive.exec.dynamic.partition.mode", "nonstrict").config("hive.exec.compress.output", "true").config("mapred.output.compression.codec", "org.apache.hadoop.io.compress.SnappyCodec").config("mapred.output.compression.type", "BLOCK").enableHiveSupport().getOrCreate())
+spark = (SparkSession.builder.appName("OWALogParser").config("SPARK_WORKER_MEMORY","6g").config("spark.executor.cores","2").config("spark.driver.memory", "6g").config("spark.executor.memory", "6g").config("hive.metastore.uris", "thrift://master:9083").config("spark.sql.hive.metastore.version", "2.1.1").config("spark.sql.hive.metastore.jars", "/usr/local/hive/lib/*").config("spark.sql.hive.metastore.sharedPrefixes", "com.mysql.jdbc").config("spark.sql.warehouse.dir", "hdfs://master:54310/user/hive/warehouse").config("hive.exec.dynamic.partition", "true").config("hive.exec.dynamic.partition.mode", "nonstrict").config("hive.exec.compress.output", "true").config("mapred.output.compression.codec", "org.apache.hadoop.io.compress.SnappyCodec").config("mapred.output.compression.type", "BLOCK").enableHiveSupport().getOrCreate())
 
 
 #we can also define conf to sparksession at run time by below. set new runtime options
@@ -33,65 +34,51 @@ spark = (SparkSession.builder.appName("CitrixLogParser").config("spark.executor.
 inputfile = sys.argv[1]
 dateval = str(sys.argv[2])
 #read CEF format AD windows log from HDFS
-#adsample = spark.textFile(inputfile)
-adsample = spark.read.text(inputfile)
-#Define base list and insert all the lines into the list
-baselist = []
+adsample = spark.sparkContext.textFile(inputfile)
+#adsample = spark.read.text(inputfile)
 
-for line in adsample.toLocalIterator():
-    baselist.append(repr(line))
+#Define base list rdd and insert all the lines into the rdd
+pattern = re.compile('\s+(?=\w+=)')
+list_rdd = adsample.map(lambda x: pattern.split(x))
 
 #get Date value to get present day's year value
 getdate = datetime.datetime.now() #- datetime.timedelta(days = 1)#enable to get yesterday year used on Dec 31 log parsed on Jan 1st
 indtyear = str(getdate.year)
 #paritition variable to make partition based on date
 partDate = dateval
-#declare a main list to capture all the fields
-main_list = []
-#   Feb 10 00:23:43 172.16.253.16 CEF:1|
-#iterate over each line from base list and conver each line to list of string. and append the list in a main list
-for a in baselist:
-    #datelist = 'null'
-    checkvar = 'null'
+
+#define function and iterate over each line from base list rdd  and conver each line to list of string.
+def f(x):
     newlist = 'null'
-    checkvar = re.split('\s+(?=\w+=)',a)
-    newlist = str(checkvar[0]).split("|")
-    #eventday = str(newlist[0][:6]+' '+str(getdate.year))
-    #eventtime = str(newlist[0][:15])
-    #datelist = newlist[0].split(" ")
-    #eventdate = newlist[0][:15]
-    #print(newlist[0])
+    checklist = 'null'
+    checklist = []
+    newlist = x[0].split("|")
     eventdate = newlist[0][12:19]+' '+str(getdate.year)+' '+newlist[0][19:28]
-    #print(eventdate)
-    newlist[0] =  'eventdate='+eventdate
-    newlist[2] = 'product='+newlist[2]
-    newlist[4] = 'logType='+newlist[4]
-    newlist[5] = 'eventType='+newlist[5]
-    checkvar.pop(0)
-    #print(newlist[0])
-    checkvar = [newlist[4]]+checkvar
-    checkvar = [newlist[5]]+checkvar
-    checkvar = [newlist[2]]+checkvar
-    checkvar = [newlist[0]]+checkvar
-    main_list.append(checkvar)
-#declare a list to store a list of list into list of dictionary
-outter_list = []
 
-for ol in main_list:
+    checklist.append('eventdate='+eventdate)
+    checklist.append('product='+newlist[2])
+    checklist.append('logType='+newlist[4])
+    checklist.append('eventType='+newlist[5])
+    x.pop(0)
+    return x+(checklist)
+
+res = list_rdd.map(f)
+
+#define function and apply to  convert list of list rdd into list of dictionary rdd
+def g(a):
+    outter_list = 'null'
+    outter_list = []
     mydict = {}
-    for il in ol:
-        #inner_list = 'null'
-        dict_var = re.split('(\w+)=',il)
+    for i in range(0, len(a)):
+        dict_var = re.split('(\w+)=', a[i])
         dict_var.pop(0)
-        #dict_var
         mydict[dict_var[0]] = dict_var[1]
-        #inner_list.append(mydict)
-    outter_list.append(mydict)
+    return mydict
 
-write_list = []
-    
+dist_res = res.map(g)
+  
 #iterate over the list of Dict to assign the values to the list of variable. and use the variable to seperate key from value
-for ol in outter_list:
+def fres(y):
     act = '-'
     agentDnsDomain = '-'
     agentNtDomain = '-'
@@ -254,7 +241,7 @@ for ol in outter_list:
     suid = '-'
     suser = '-'
     type_ = '-'
-    for k,v in ol.items():
+    for k,v in y.items():
         if k == 'act':
             act = v
         elif k == 'agentDnsDomain':
@@ -576,7 +563,7 @@ for ol in outter_list:
         elif k == 'suid':
             suid = v
         elif k == 'suser':
-            suser = v
+            suser = v.lower().replace('\\\\', '').replace('ducorp', '')
         elif k == 'type':
             type_ = v
         else:
@@ -584,21 +571,25 @@ for ol in outter_list:
     #print(eventdate+'---------------------------------------------------')
     #convert the vaiurbale into list of string that contains values of each key
     str_list = repr(act+'&&'+agentDnsDomain+'&&'+agentNtDomain+'&&'+agentTranslatedAddress+'&&'+agentTranslatedZoneExternalID+'&&'+agentTranslatedZoneURI+'&&'+agentZoneExternalID+'&&'+agentZoneURI+'&&'+agt+'&&'+ahost+'&&'+aid+'&&'+amac+'&&'+app+'&&'+art+'&&'+at+'&&'+atz+'&&'+av+'&&'+c6a1+'&&'+c6a1Label+'&&'+c6a3+'&&'+c6a3Label+'&&'+c6a4+'&&'+C6a4Label+'&&'+cat+'&&'+cfp1+'&&'+cfp1Label+'&&'+cfp2+'&&'+cfp2Label+'&&'+cfp3+'&&'+cfp3Label+'&&'+cfp4+'&&'+cfp4Label+'&&'+cn1+'&&'+cn1Label+'&&'+cn2+'&&'+cn2Label+'&&'+cn3+'&&'+cn3Label+'&&'+cnt+'&&'+cs1+'&&'+cs1Label+'&&'+cs2+'&&'+cs2Label+'&&'+cs3+'&&'+cs3Label+'&&'+cs4+'&&'+cs4Label+'&&'+cs5+'&&'+cs5Label+'&&'+cs6+'&&'+cs6Label+'&&'+customerExternalID+'&&'+customerURI+'&&'+destinationDnsDomain+'&&'+destinationServiceName+'&&'+destinationTranslatedZoneURI+'&&'+destinationTranslatedAddress+'&&'+destinationTranslatedPort+'&&'+destinationTranslatedZoneExternalID+'&&'+destinationZoneURI+'&&'+destinationZoneExternalID+'&&'+deviceCustomDate1+'&&'+deviceCustomDate1Label+'&&'+deviceCustomDate2+'&&'+deviceCustomDate2Label+'&&'+deviceDirection+'&&'+deviceDnsDomain+'&&'+deviceExternalId+'&&'+deviceFacility+'&&'+deviceInboundInterface+'&&'+deviceNtDomain+'&&'+DeviceOutboundInterface+'&&'+DevicePayloadId+'&&'+deviceProcessName+'&&'+deviceTranslatedAddress+'&&'+deviceTranslatedZoneURI+'&&'+deviceTranslatedZoneExternalID+'&&'+deviceZoneExternalID+'&&'+deviceZoneURI+'&&'+dhost+'&&'+dlat+'&&'+dlong+'&&'+dmac+'&&'+dntdom+'&&'+dpid+'&&'+dpriv+'&&'+dproc+'&&'+dpt+'&&'+dst+'&&'+dtz+'&&'+duid+'&&'+duser+'&&'+dvc+'&&'+dvchost+'&&'+dvcmac+'&&'+dvcpid+'&&'+end+'&&'+eventdate+'&&'+eventId+'&&'+eventType+'&&'+externalId+'&&'+fileCreateTime+'&&'+fileHash+'&&'+fileId+'&&'+fileModificationTime+'&&'+filePath+'&&'+filePermission+'&&'+fileType+'&&'+flexDate1+'&&'+flexDate1Label+'&&'+flexString1+'&&'+flexString1Label+'&&'+flexString2+'&&'+flexString2Label+'&&'+fname+'&&'+fsize+'&&'+in_+'&&'+logType+'&&'+msg+'&&'+oldFileCreateTime+'&&'+oldFileHash+'&&'+oldFileId+'&&'+oldFileModificationTime+'&&'+oldFileName+'&&'+oldFilePath+'&&'+oldFilePermission+'&&'+oldFileSize+'&&'+oldFileType+'&&'+out+'&&'+outcome+'&&'+product+'&&'+proto+'&&'+rawEvent+'&&'+reason+'&&'+request+'&&'+requestClientApplication+'&&'+requestContext+'&&'+requestCookies+'&&'+requestMethod+'&&'+rt+'&&'+shost+'&&'+slat+'&&'+slong+'&&'+smac+'&&'+sntdom+'&&'+sourceDnsDomain+'&&'+sourceServiceName+'&&'+sourceTranslatedAddress+'&&'+sourceTranslatedPort+'&&'+sourceTranslatedZoneURI+'&&'+sourceTranslatedZoneExternalID+'&&'+sourceZoneExternalID+'&&'+sourceZoneURI+'&&'+spid+'&&'+spriv+'&&'+sproc+'&&'+spt+'&&'+src+'&&'+start+'&&'+suid+'&&'+suser+'&&'+type_+'&&'+str(partDate)).split('&&')
-    write_list.append(str_list)
+    #write_list.append(str_list)
+    return str_list
 
-#convert the list of list into a Data frame
+res_dataframe = dist_res.map(fres)
+
+#convert the list of list rdd to a Data frame
 #define schema of the Data frame
 table_schema = StructType([StructField("act", StringType(), True), StructField("agentDnsDomain", StringType(), True), StructField("agentNtDomain", StringType(), True), StructField("agentTranslatedAddress", StringType(), True), StructField("agentTranslatedZoneExternalID", StringType(), True), StructField("agentTranslatedZoneURI", StringType(), True), StructField("agentZoneExternalID", StringType(), True), StructField("agentZoneURI", StringType(), True), StructField("agt", StringType(), True), StructField("ahost", StringType(), True), StructField("aid", StringType(), True), StructField("amac", StringType(), True), StructField("app", StringType(), True), StructField("art", StringType(), True), StructField("at", StringType(), True), StructField("atz", StringType(), True), StructField("av", StringType(), True), StructField("c6a1  ", StringType(), True), StructField("c6a1Label", StringType(), True), StructField("c6a3", StringType(), True), StructField("c6a3Label", StringType(), True), StructField("c6a4", StringType(), True), StructField("C6a4Label", StringType(), True), StructField("cat", StringType(), True), StructField("cfp1", StringType(), True), StructField("cfp1Label", StringType(), True), StructField("cfp2", StringType(), True), StructField("cfp2Label", StringType(), True), StructField("cfp3", StringType(), True), StructField("cfp3Label", StringType(), True), StructField("cfp4", StringType(), True), StructField("cfp4Label", StringType(), True), StructField("cn1", StringType(), True), StructField("cn1Label", StringType(), True), StructField("cn2", StringType(), True), StructField("cn2Label", StringType(), True), StructField("cn3", StringType(), True), StructField("cn3Label", StringType(), True), StructField("cnt", StringType(), True), StructField("cs1", StringType(), True), StructField("cs1Label", StringType(), True), StructField("cs2", StringType(), True), StructField("cs2Label", StringType(), True), StructField("cs3", StringType(), True), StructField("cs3Label", StringType(), True), StructField("cs4", StringType(), True), StructField("cs4Label", StringType(), True), StructField("cs5", StringType(), True), StructField("cs5Label", StringType(), True), StructField("cs6", StringType(), True), StructField("cs6Label", StringType(), True), StructField("customerExternalID", StringType(), True), StructField("customerURI", StringType(), True), StructField("destinationDnsDomain", StringType(), True), StructField("destinationServiceName", StringType(), True), StructField("destinationTranslatedZoneURI", StringType(), True), StructField("destinationTranslatedAddress", StringType(), True), StructField("destinationTranslatedPort", StringType(), True), StructField("destinationTranslatedZoneExternalID", StringType(), True), StructField("destinationZoneURI", StringType(), True), StructField("destinationZoneExternalID", StringType(), True), StructField("deviceCustomDate1", StringType(), True), StructField("deviceCustomDate1Label", StringType(), True), StructField("deviceCustomDate2", StringType(), True), StructField("deviceCustomDate2Label", StringType(), True), StructField("deviceDirection", StringType(), True), StructField("deviceDnsDomain", StringType(), True), StructField("deviceExternalId", StringType(), True), StructField("deviceFacility", StringType(), True), StructField("deviceInboundInterface", StringType(), True), StructField("deviceNtDomain", StringType(), True), StructField("DeviceOutboundInterface", StringType(), True), StructField("DevicePayloadId", StringType(), True), StructField("deviceProcessName", StringType(), True), StructField("deviceTranslatedAddress", StringType(), True), StructField("deviceTranslatedZoneURI", StringType(), True), StructField("deviceTranslatedZoneExternalID", StringType(), True), StructField("deviceZoneExternalID", StringType(), True), StructField("deviceZoneURI", StringType(), True), StructField("dhost", StringType(), True), StructField("dlat", StringType(), True), StructField("dlong", StringType(), True), StructField("dmac", StringType(), True), StructField("dntdom", StringType(), True), StructField("dpid", StringType(), True), StructField("dpriv", StringType(), True), StructField("dproc", StringType(), True), StructField("dpt", StringType(), True), StructField("dst", StringType(), True), StructField("dtz", StringType(), True), StructField("duid", StringType(), True), StructField("duser", StringType(), True), StructField("dvc", StringType(), True), StructField("dvchost", StringType(), True), StructField("dvcmac", StringType(), True), StructField("dvcpid", StringType(), True), StructField("end", StringType(), True), StructField("eventdate", StringType(), True), StructField("eventId", StringType(), True), StructField("eventType", StringType(), True), StructField("externalId", StringType(), True), StructField("fileCreateTime", StringType(), True), StructField("fileHash", StringType(), True), StructField("fileId", StringType(), True), StructField("fileModificationTime", StringType(), True), StructField("filePath", StringType(), True), StructField("filePermission", StringType(), True), StructField("fileType", StringType(), True), StructField("flexDate1", StringType(), True), StructField("flexDate1Label", StringType(), True), StructField("flexString1", StringType(), True), StructField("flexString1Label", StringType(), True), StructField("flexString2", StringType(), True), StructField("flexString2Label", StringType(), True), StructField("fname", StringType(), True), StructField("fsize", StringType(), True), StructField("in_", StringType(), True), StructField("logType", StringType(), True), StructField("msg", StringType(), True), StructField("oldFileCreateTime", StringType(), True), StructField("oldFileHash", StringType(), True), StructField("oldFileId", StringType(), True), StructField("oldFileModificationTime", StringType(), True), StructField("oldFileName", StringType(), True), StructField("oldFilePath", StringType(), True), StructField("oldFilePermission", StringType(), True), StructField("oldFileSize", StringType(), True), StructField("oldFileType", StringType(), True), StructField("out", StringType(), True), StructField("outcome", StringType(), True), StructField("product", StringType(), True), StructField("proto", StringType(), True), StructField("rawEvent", StringType(), True), StructField("reason", StringType(), True), StructField("request", StringType(), True), StructField("requestClientApplication", StringType(), True), StructField("requestContext", StringType(), True), StructField("requestCookies", StringType(), True), StructField("requestMethod", StringType(), True), StructField("rt", StringType(), True), StructField("shost", StringType(), True), StructField("slat", StringType(), True), StructField("slong", StringType(), True), StructField("smac", StringType(), True), StructField("sntdom", StringType(), True), StructField("sourceDnsDomain", StringType(), True), StructField("sourceServiceName", StringType(), True), StructField("sourceTranslatedAddress", StringType(), True), StructField("sourceTranslatedPort", StringType(), True), StructField("sourceTranslatedZoneURI", StringType(), True), StructField("sourceTranslatedZoneExternalID", StringType(), True), StructField("sourceZoneExternalID", StringType(), True), StructField("sourceZoneURI", StringType(), True), StructField("spid", StringType(), True), StructField("spriv", StringType(), True), StructField("sproc", StringType(), True), StructField("spt", StringType(), True), StructField("src", StringType(), True), StructField("start", StringType(), True), StructField("suid", StringType(), True), StructField("suser", StringType(), True), StructField("type_", StringType(), True), StructField("partDate", StringType(), True)])
 #to convert the list of list to Data Frame with schema
-df = spark.createDataFrame(write_list,schema=table_schema)
-df = df.withColumn("partDate", regexp_replace("partDate", ".$" , ""))
-df = df.withColumn("act", regexp_replace("act", "'" , ""))
+df_fnl = spark.createDataFrame(res_dataframe.map(lambda x: x),schema=table_schema)
+df_fnl = df_fnl.withColumn("partDate", regexp_replace("partDate", ".$" , ""))
+#df_fnl = df_fnl.withColumn("suser", lower(col("suser"))
+#df_fnl = df_fnl.withColumn("suser", regexp_replace("suser", "\\\\", "")) 
 #df = df.select(col("partDate"), substring_index(col("partDate"), "\'", 1).as("partDate"))
 #hive_context = HiveContext(sc)
-df.registerTempTable('tab_name')
+df_fnl.registerTempTable('tab_name')
 #hive_context.sql("SET hive.exec.compress.output=true")
 #hive_context.sql("SET mapred.output.compression.codec=org.apache.hadoop.io.compress.SnappyCodec")
 #hive_context.sql("SET mapred.output.compression.type=BLOCK")
 #hive_context.sql("SET hive.exec.dynamic.partition.mode=nonstrict")
 #hive_context.sql("SET hive.exec.dynamic.partition=true")
-spark.sql("insert into table masterlogdb.citrix select * from tab_name")
+spark.sql("insert into table masterlogdb.owa select * from tab_name")
