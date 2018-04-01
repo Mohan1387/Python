@@ -593,3 +593,6 @@ df_fnl.registerTempTable('tab_name')
 #hive_context.sql("SET hive.exec.dynamic.partition.mode=nonstrict")
 #hive_context.sql("SET hive.exec.dynamic.partition=true")
 spark.sql("insert into table masterlogdb.owa select * from tab_name")
+
+#dvar=$(date -d "-1 days"  +%Y%m%d)
+#spark-submit  --master yarn --executor-cores 3  --num-executors 8 --driver-memory 10g /home/hduser/pyspark_script/OWAParser.py hdfs://master:54310/user/hdfs/OWA/compressed/$dvar/*.snappy $dvar
