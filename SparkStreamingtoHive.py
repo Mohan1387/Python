@@ -15,11 +15,10 @@ from pyspark.sql.types import *
 from pyspark.sql import SparkSession, HiveContext
 from pyspark.streaming import StreamingContext
 
+#spark session driver configuration
 spark = (SparkSession.builder.appName("OWALogParser").config("SPARK_WORKER_MEMORY","6g").config("spark.executor.cores","4").config("spark.driver.memory", "2g").config("spark.executor.memory", "2g").config("hive.metastore.uris", "thrift://master:9083").config("spark.sql.hive.metastore.version", "2.1.1").config("spark.sql.hive.metastore.jars", "/usr/local/hive/lib/*").config("spark.sql.hive.metastore.sharedPrefixes", "com.mysql.jdbc").config("spark.sql.warehouse.dir", "hdfs://master:54310/user/hive/warehouse").config("hive.exec.dynamic.partition", "true").config("hive.exec.dynamic.partition.mode", "nonstrict").config("hive.exec.compress.output", "true").config("mapred.output.compression.codec", "org.apache.hadoop.io.compress.SnappyCodec").config("mapred.output.compression.type", "BLOCK").enableHiveSupport().getOrCreate())
 
-
-# Create a local StreamingContext with two working thread and batch interval of 1 second
-
+# Create a local StreamingContext with batch interval of 1 second
 ssc = StreamingContext(spark.sparkContext, 1)
 
 # Create a DStream that will connect to hostname:port, like localhost:9999
