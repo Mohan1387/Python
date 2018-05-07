@@ -1,35 +1,27 @@
-/usr/local/pig/bin/pig -param FILE='/user/hdfs/OWA/uncompressed/eventlog.csv.'$(date -d "-2 days" +%Y%m%d)'*' -param DATE='/user/hdfs/OWA/compressed/'$(date -d "-2 days" +%Y%m%d) -f /home/hduser/pig_scripts/FileCompress.pig
-/usr/local/pig/bin/pig -param FILE='/user/hdfs/OWA/uncompressed/eventlog.csv.'$(date -d "-3 days" +%Y%m%d)'*' -param DATE='/user/hdfs/OWA/compressed/'$(date -d "-3 days" +%Y%m%d) -f /home/hduser/pig_scripts/FileCompress.pig
-/usr/local/pig/bin/pig -param FILE='/user/hdfs/OWA/uncompressed/eventlog.csv.'$(date -d "-4 days" +%Y%m%d)'*' -param DATE='/user/hdfs/OWA/compressed/'$(date -d "-4 days" +%Y%m%d) -f /home/hduser/pig_scripts/FileCompress.pig
-/usr/local/pig/bin/pig -param FILE='/user/hdfs/OWA/uncompressed/eventlog.csv.'$(date -d "-5 days" +%Y%m%d)'*' -param DATE='/user/hdfs/OWA/compressed/'$(date -d "-5 days" +%Y%m%d) -f /home/hduser/pig_scripts/FileCompress.pig
-/usr/local/pig/bin/pig -param FILE='/user/hdfs/OWA/uncompressed/eventlog.csv.'$(date -d "-6 days" +%Y%m%d)'*' -param DATE='/user/hdfs/OWA/compressed/'$(date -d "-6 days" +%Y%m%d) -f /home/hduser/pig_scripts/FileCompress.pig
-/usr/local/pig/bin/pig -param FILE='/user/hdfs/OWA/uncompressed/eventlog.csv.'$(date -d "-7 days" +%Y%m%d)'*' -param DATE='/user/hdfs/OWA/compressed/'$(date -d "-7 days" +%Y%m%d) -f /home/hduser/pig_scripts/FileCompress.pig
-/usr/local/pig/bin/pig -param FILE='/user/hdfs/OWA/uncompressed/eventlog.csv.'$(date -d "-8 days" +%Y%m%d)'*' -param DATE='/user/hdfs/OWA/compressed/'$(date -d "-8 days" +%Y%m%d) -f /home/hduser/pig_scripts/FileCompress.pig
-/usr/local/pig/bin/pig -param FILE='/user/hdfs/OWA/uncompressed/eventlog.csv.'$(date -d "-9 days" +%Y%m%d)'*' -param DATE='/user/hdfs/OWA/compressed/'$(date -d "-9 days" +%Y%m%d) -f /home/hduser/pig_scripts/FileCompress.pig
 
 
-dvar=$(date -d "-1 days"  +%Y%m%d)
-spark-submit --driver-memory 20g /home/hduser/pyspark_script/OWAParser.py hdfs://master:54310/user/hdfs/OWA/compressed/$dvar/*.snappy $dvar
+#dvar=$(date -d "-1 days"  +%Y%m%d)
+#spark-submit --driver-memory 20g /home/hduser/pyspark_script/OWAParser.py hdfs://master:54310/user/hdfs/OWA/compressed/$dvar/*.snappy $dvar
+
+#spark-submit  --master yarn --executor-cores 2  --num-executors 8 --driver-memory 20g --conf spark.rpc.message.maxSize=2000 --conf spark.dynamicAllocation.enabled=false  /home/hduser/pyspark_script/OWAParser.py hdfs://master:54310/user/hdfs/OWA/compressed/$dvar/*.snappy $dvar
 
 
-val evaluator = new BinaryClassificationEvaluator().setLabelCol("label").setRawPredictionCol("rawPrediction").setMetricName("areaUnderROC")
-**// Evaluates predictions and returns a scalar metric areaUnderROC(larger is better).**
-val accuracy = evaluator.evaluate(predictions)
+#dvar=$(date -d "-1 days"  +%Y%m%d)
+#spark-submit  --master yarn --executor-cores 4  --num-executors 8 --driver-memory 10g /home/hduser/pyspark_script/OWAParser.py hdfs://master:54310/user/hdfs/OWA/compressed/$dvar/*.snappy
 
+#dvar=$(date -d "-1 days"  +%Y%m%d)
+#spark-submit  --master yarn --executor-cores 4  --num-executors 8 --driver-memory 10g /home/hduser/pyspark_script/ProxyparserTest.py hdfs://master:54310/user/hdfs/Proxy/compressed/$dvar/*.snappy
 
-spark-submit  --master yarn --executor-cores 2  --num-executors 8 --driver-memory 20g --conf spark.rpc.message.maxSize=2000 --conf spark.dynamicAllocation.enabled=false  /home/hduser/pyspark_script/OWAParser.py hdfs://master:54310/user/hdfs/OWA/compressed/$dvar/*.snappy $dvar
-
-
-dvar=$(date -d "-1 days"  +%Y%m%d)
-spark-submit  --master yarn --executor-cores 4  --num-executors 8 --driver-memory 10g /home/hduser/pyspark_script/OWAParser.py hdfs://master:54310/user/hdfs/OWA/compressed/$dvar/*.snappy
-
-dvar=$(date -d "-1 days"  +%Y%m%d)
-spark-submit  --master yarn --executor-cores 4  --num-executors 8 --driver-memory 10g /home/hduser/pyspark_script/ProxyparserTest.py hdfs://master:54310/user/hdfs/Proxy/compressed/$dvar/*.snappy
-
-import sys
+#import sys
 #reload(sys)
 #sys.setdefaultencoding('utf8')
 --------------------------------------------------------------working code ---------------------------------------------------------------
+# Author Mohan
+#below code runs perfectly without encoding problems in pyspark with python3 default driver
+#add below exports to spark-env.sh or ~/.bashrc file for change pyspark default python driver from 2 to 3
+#export PYSPARK_PYTHON=/usr/bin/python3
+#export PYSPARK_DRIVER_PYTHON=/usr/bin/python3
+
 import sys
 import re
 import datetime
@@ -73,7 +65,7 @@ spark.sql("insert into table masterlogdb.proxynew select Proxy_Device_address,En
 
 ------------------------------------------------------end of code------------------------------------------------------------------------------------
 
-
+#rough work
 def checkencode(x):
     if len(x) == 31:
         chk = chardet.detect(x)
@@ -87,16 +79,6 @@ def checkencode(x):
 tempres = proxysample.map(checkencode)
 
 tempres.take(10000000)
-
-
-
-
-
-
-
-asciiascii
-
-
 
 from chardet.universaldetector import UniversalDetector
 
